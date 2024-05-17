@@ -95,7 +95,8 @@ impl SqliteWrapper {
                 let c = c.lock().unwrap();
                 let mut statement = c.prepare(sql).unwrap();
                 let results = statement.query(params)?;
-                Ok(results.mapped(|r| Ok(map(r))).map(|r| r.unwrap()).collect())
+                results.mapped(|r| Ok(map(r)))
+                    .map(|r| r).collect()
             }
         }
     }
