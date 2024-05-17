@@ -19,14 +19,17 @@ pub struct GenCtx {
     pub is_async: bool,
     // Should serializable struct
     pub gen_derive: bool,
+    // Should generate sqlite code
+    pub gen_sqlite: bool,
 }
 
 impl GenCtx {
-    pub fn new(depth: u8, is_async: bool, gen_derive: bool) -> Self {
+    pub fn new(depth: u8, is_async: bool, gen_derive: bool, gen_sqlite: bool) -> Self {
         Self {
             depth,
             is_async,
             gen_derive,
+            gen_sqlite,
         }
     }
 
@@ -363,15 +366,17 @@ fn gen_row_structs(w: &mut impl Write, row: &PreparedItem, ctx: &GenCtx) {
             .enumerate()
             .map(|(i, f)| format!("{}: r.get_unwrap({})", f.ident.rs, i));
 
-        code!(w =>
-            impl $name {
-                pub fn from_sqlite<'a>(r: &cornucopia_async::rusqlite::Row<'a>) -> Self {
-                    Self {
-                        $($construct_fields, )
+        if ctx.gen_sqlite {
+            code!(w =>
+                impl $name {
+                    pub fn from_sqlite<'a>(r: &cornucopia_async::rusqlite::Row<'a>) -> Self {
+                        Self {
+                            $($construct_fields, )
+                        }
                     }
                 }
-            }
-        );
+            );
+        }
 
         if !is_copy {
             let fields_name = fields.iter().map(|p| &p.ident.rs);
@@ -503,8 +508,9 @@ fn gen_sqlite_wrapper<W: Write>(
     let PreparedQuery {
         ident,
         row,
-        sql,
         param,
+        sqlite_sql,
+        ..
     } = query;
 
     let name = &ident.rs;
@@ -531,12 +537,7 @@ fn gen_sqlite_wrapper<W: Write>(
 
     let traits_idx = (1..=traits.len()).map(idx_char);
 
-    let mut sqlite_query = sql.to_string();
-    for i in 1..param_field.len() + 1 {
-        sqlite_query = sqlite_query.replace(&format!("${i}"), &format!("?{i}"));
-    }
-
-    if sql.trim().to_uppercase().starts_with("SELECT") {
+    if sqlite_sql.trim().to_uppercase().starts_with("SELECT") {
         let (idx, _) = row.as_ref().unwrap();
         let item = module.rows.get_index(*idx).unwrap().1;
         let PreparedItem {
@@ -560,7 +561,7 @@ fn gen_sqlite_wrapper<W: Write>(
                 }
                 cornucopia_async::Database::Sqlite(c) => {
                     c.query_rows(
-                        "$sqlite_query",
+                        "$sqlite_sql",
                         cornucopia_async::rusqlite::params![$($params_name,)],
                         |r| $row_struct_name::from_sqlite(r)
                     )?
@@ -578,7 +579,7 @@ fn gen_sqlite_wrapper<W: Write>(
                         ${name}().bind(p, $($params_name,)).await? as u64
                     }
                     cornucopia_async::Database::Sqlite(c) => {
-                        c.execute("$sqlite_query",
+                        c.execute("$sqlite_sql",
                           cornucopia_async::rusqlite::params![$($params_name,)])? as u64
                     }
                 })
@@ -593,6 +594,7 @@ fn gen_query_fn<W: Write>(w: &mut W, module: &PreparedModule, query: &PreparedQu
         row,
         sql,
         param,
+        ..
     } = query;
 
     let (client_mut, fn_async, fn_await, backend, client) = if ctx.is_async {
@@ -892,13 +894,18 @@ pub(crate) fn generate(preparation: Preparation, settings: CodegenSettings) -> S
     gen_type_modules(
         w,
         &preparation.types,
-        &GenCtx::new(1, settings.gen_async, settings.derive_ser),
+        &GenCtx::new(
+            1,
+            settings.gen_async,
+            settings.derive_ser,
+            settings.gen_sync,
+        ),
     );
     // Generate queries
     let query_modules = preparation.modules.iter().map(|module| {
         move |w: &mut String| {
             let name = &module.info.name;
-            let ctx = GenCtx::new(2, settings.gen_async, settings.derive_ser);
+            let ctx = GenCtx::new(2, settings.gen_async, settings.derive_ser, settings.gen_sqlite);
             let params_string = module
                 .params
                 .values()
@@ -911,7 +918,7 @@ pub(crate) fn generate(preparation: Preparation, settings: CodegenSettings) -> S
             let sync_specific = |w: &mut String| {
                 let gen_specific = |depth: u8, is_async: bool| {
                     move |w: &mut String| {
-                        let ctx = GenCtx::new(depth, is_async, settings.derive_ser);
+                        let ctx = GenCtx::new(depth, is_async, settings.derive_ser, settings.gen_sqlite);
                         let import = if is_async {
                             "use futures::{StreamExt, TryStreamExt};use futures; use cornucopia_async::GenericClient;"
                         } else {
@@ -925,15 +932,17 @@ pub(crate) fn generate(preparation: Preparation, settings: CodegenSettings) -> S
                             |w: &mut String| gen_query_fn(w, module, query, &ctx)
                         });
 
-                        let dmls = module.queries.values().map(|query| {
-                            |w: &mut String| gen_sqlite_wrapper(w, module, query, &ctx)
+                        let sqlite = module.queries.values().map(|query| {
+                                |w: &mut String| if is_async && settings.gen_sqlite {
+                                    gen_sqlite_wrapper(w, module, query, &ctx);
+                                }
                         });
 
                         code!(w =>
                             $import
                             $($!rows_query_string)
                             $($!queries_string)
-                            $($!dmls)
+                            $($!sqlite)
                         )
                     }
                 };

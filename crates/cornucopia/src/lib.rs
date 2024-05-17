@@ -27,6 +27,7 @@ use read_queries::read_query_modules;
 #[doc(hidden)]
 pub use cli::run;
 
+use crate::parser::Module;
 pub use error::Error;
 pub use load_schema::load_schema;
 
@@ -36,6 +37,7 @@ pub struct CodegenSettings {
     pub gen_async: bool,
     pub gen_sync: bool,
     pub derive_ser: bool,
+    pub gen_sqlite: bool,
 }
 
 /// Generates Rust queries from PostgreSQL queries located at `queries_path`,
@@ -56,6 +58,34 @@ pub fn generate_live<P: AsRef<Path>>(
     // Generate
     let prepared_modules = prepare(client, modules)?;
     let generated_code = generate_internal(prepared_modules, settings);
+    // Write
+    if let Some(d) = destination {
+        write_generated_code(d.as_ref(), &generated_code)?;
+    };
+
+    Ok(generated_code)
+}
+
+pub fn generate_live_with_sqlite<P: AsRef<Path>>(
+    client: &mut Client,
+    queries_path: P,
+    destination: Option<P>,
+    sqlite: &rusqlite::Connection,
+    settings: CodegenSettings,
+) -> Result<String, Error> {
+    // Read
+    let modules = read_query_modules(queries_path.as_ref())?
+        .into_iter()
+        .map(parse_query_module)
+        .collect::<Result<Vec<_>, parser::error::Error>>()?;
+
+    // validate SQLite
+    validate_sqlite(sqlite, &modules)?;
+
+    // Generate
+    let prepared_modules = prepare(client, modules)?;
+    let generated_code = generate_internal(prepared_modules, settings);
+
     // Write
     if let Some(d) = destination {
         write_generated_code(d.as_ref(), &generated_code)?;
@@ -105,4 +135,15 @@ fn write_generated_code(destination: &Path, generated_code: &str) -> Result<(), 
             file_path: destination.to_owned(),
         })?,
     )
+}
+
+fn validate_sqlite(connection: &rusqlite::Connection, modules: &[Module]) -> Result<(), Error> {
+    for module in modules {
+        for query in &module.queries {
+            connection
+                .prepare(&query.sqlite_query())
+                .map_err(|e| Error::PrepareQueries(e.into()))?;
+        }
+    }
+    Ok(())
 }

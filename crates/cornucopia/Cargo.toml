@@ -34,5 +34,7 @@ heck = "0.4.0"
 # Order-preserving map to work around borrowing issues
 indexmap = "2.0.2"
 
+rusqlite = {  version = "0.31.0", features = ["serde_json", "bundled"] }
+
 prettyplease = "0.2.20"
 syn = { version = "2", features = ["full"] }

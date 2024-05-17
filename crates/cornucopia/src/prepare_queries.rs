@@ -25,6 +25,7 @@ pub(crate) struct PreparedQuery {
     pub(crate) param: Option<(usize, Vec<usize>)>,
     pub(crate) row: Option<(usize, Vec<usize>)>,
     pub(crate) sql: String,
+    pub(crate) sqlite_sql: String,
 }
 
 /// A normalized ident replacing all non-alphanumeric characters with an underscore (`_`)
@@ -88,7 +89,7 @@ impl PreparedField {
 
 impl PreparedField {
     pub fn unwrapped_name(&self) -> String {
-        self.own_struct(&GenCtx::new(0, false, false))
+        self.own_struct(&GenCtx::new(0, false, false, false))
             .replace(['<', '>', '_'], "")
             .to_upper_camel_case()
     }
@@ -212,6 +213,7 @@ impl PreparedModule {
         param_idx: Option<(usize, Vec<usize>)>,
         row_idx: Option<(usize, Vec<usize>)>,
         sql: String,
+        sqlite_sql: String,
     ) {
         self.queries.insert(
             name.clone(),
@@ -220,6 +222,7 @@ impl PreparedModule {
                 row: row_idx,
                 sql,
                 param: param_idx,
+                sqlite_sql,
             },
         );
     }
@@ -352,16 +355,19 @@ fn prepare_query(
     module: &mut PreparedModule,
     registrar: &mut TypeRegistrar,
     types: &[TypeAnnotation],
-    Query {
+    query: Query,
+    module_info: &ModuleInfo,
+) -> Result<(), Error> {
+    let sqlite_query = query.sqlite_query();
+    let Query {
         name,
         param,
         bind_params,
         row,
         sql_str,
         sql_span,
-    }: Query,
-    module_info: &ModuleInfo,
-) -> Result<(), Error> {
+    } = query;
+
     // Prepare the statement
     let stmt = client
         .prepare(&sql_str)
@@ -441,7 +447,7 @@ fn prepare_query(
     } else {
         Some(module.add_param(params_name, params_fields, param.is_implicit())?)
     };
-    module.add_query(name.clone(), param_idx, row_idx, sql_str);
+    module.add_query(name.clone(), param_idx, row_idx, sql_str, sqlite_query);
 
     Ok(())
 }
@@ -473,6 +479,8 @@ pub(crate) mod error {
         #[error(transparent)]
         #[diagnostic(transparent)]
         Validation(#[from] Box<ValidationError>),
+        #[error("Query is not valid for sqlite")]
+        Sqlite(#[from] rusqlite::Error),
     }
 
     impl Error {

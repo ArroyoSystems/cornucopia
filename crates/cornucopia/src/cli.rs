@@ -60,6 +60,7 @@ pub fn run() -> Result<(), Error> {
         gen_async: r#async || !sync,
         gen_sync: sync,
         derive_ser: serialize,
+        gen_sqlite: false,
     };
 
     match action {

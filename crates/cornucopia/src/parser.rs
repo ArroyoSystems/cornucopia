@@ -274,6 +274,15 @@ impl Query {
                 },
             )
     }
+
+    pub fn sqlite_query(&self) -> String {
+        let mut sqlite_query = self.sql_str.clone();
+        for i in 1..self.bind_params.len() + 1 {
+            sqlite_query = sqlite_query.replace(&format!("${i}"), &format!("?{i}"));
+        }
+
+        sqlite_query
+    }
 }
 
 #[derive(Debug)]
