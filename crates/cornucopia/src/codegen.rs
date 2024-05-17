@@ -358,6 +358,21 @@ fn gen_row_structs(w: &mut impl Write, row: &PreparedItem, ctx: &GenCtx) {
             }
         );
 
+        let construct_fields = fields
+            .iter()
+            .enumerate()
+            .map(|(i, f)| format!("{}: r.get_unwrap({})", f.ident.rs, i));
+
+        code!(w =>
+            impl $name {
+                pub fn from_sqlite<'a>(r: &cornucopia_async::rusqlite::Row<'a>) -> Self {
+                    Self {
+                        $($construct_fields, )
+                    }
+                }
+            }
+        );
+
         if !is_copy {
             let fields_name = fields.iter().map(|p| &p.ident.rs);
             let fields_ty = fields.iter().map(|p| p.brw_ty(true, ctx));
@@ -477,6 +492,99 @@ fn gen_row_query(w: &mut impl Write, row: &PreparedItem, ctx: &GenCtx) {
 
 pub fn idx_char(idx: usize) -> String {
     format!("T{idx}")
+}
+
+fn gen_sqlite_wrapper<W: Write>(
+    w: &mut W,
+    module: &PreparedModule,
+    query: &PreparedQuery,
+    ctx: &GenCtx,
+) {
+    let PreparedQuery {
+        ident,
+        row,
+        sql,
+        param,
+    } = query;
+
+    let name = &ident.rs;
+
+    let (_, param_field, order) = match param {
+        Some((idx, order)) => {
+            let it = module.params.get_index(*idx).unwrap().1;
+            (Some(it), it.fields.as_slice(), order.as_slice())
+        }
+        None => (None, [].as_slice(), [].as_slice()),
+    };
+
+    let mut traits = Vec::new();
+
+    let params_ty: Vec<_> = order
+        .iter()
+        .map(|idx| param_field[*idx].param_ergo_ty(&mut traits, ctx))
+        .collect();
+    let params_name = order.iter().map(|idx| &param_field[*idx].ident.rs);
+
+    for t in &mut traits {
+        *t = format!("{t} + cornucopia_async::rusqlite::types::ToSql");
+    }
+
+    let traits_idx = (1..=traits.len()).map(idx_char);
+
+    let mut sqlite_query = sql.to_string();
+    for i in 1..param_field.len() + 1 {
+        sqlite_query = sqlite_query.replace(&format!("${i}"), &format!("?{i}"));
+    }
+
+    if sql.trim().to_uppercase().starts_with("SELECT") {
+        let (idx, _) = row.as_ref().unwrap();
+        let item = module.rows.get_index(*idx).unwrap().1;
+        let PreparedItem {
+            fields, is_named, ..
+        } = &item;
+        // Query fn
+        let row_struct_name = if *is_named {
+            item.path(ctx).clone()
+        } else {
+            (&fields[0]).own_struct(ctx)
+        };
+
+        code!(w =>
+        pub async fn fetch_${name}<'a, $($traits_idx: $traits,)>(db: &cornucopia_async::Database<'a>,  $($params_name: &'a $params_ty,) ) -> Result<Vec<$row_struct_name>, cornucopia_async::DbError> {
+            Ok(match db {
+                cornucopia_async::Database::Postgres(p) => {
+                    ${name}().bind(p, $($params_name,)).all().await?.into_iter().collect()
+                }
+                cornucopia_async::Database::PostgresTx(p) => {
+                    ${name}().bind(p, $($params_name,)).all().await?.into_iter().collect()
+                }
+                cornucopia_async::Database::Sqlite(c) => {
+                    c.query_rows(
+                        "$sqlite_query",
+                        cornucopia_async::rusqlite::params![$($params_name,)],
+                        |r| $row_struct_name::from_sqlite(r)
+                    )?
+                }
+            })
+        });
+    } else {
+        code!(w =>
+            pub async fn execute_${name}<'a, $($traits_idx: $traits,)>(db: &cornucopia_async::Database<'a>,  $($params_name: &'a $params_ty,) ) -> Result<u64, cornucopia_async::DbError> {
+                Ok(match db {
+                    cornucopia_async::Database::Postgres(p) => {
+                        ${name}().bind(p, $($params_name,)).await? as u64
+                    }
+                    cornucopia_async::Database::PostgresTx(p) => {
+                        ${name}().bind(p, $($params_name,)).await? as u64
+                    }
+                    cornucopia_async::Database::Sqlite(c) => {
+                        c.execute("$sqlite_query",
+                          cornucopia_async::rusqlite::params![$($params_name,)])? as u64
+                    }
+                })
+            }
+        )
+    }
 }
 
 fn gen_query_fn<W: Write>(w: &mut W, module: &PreparedModule, query: &PreparedQuery, ctx: &GenCtx) {
@@ -654,11 +762,40 @@ fn gen_custom_type(w: &mut impl Write, schema: &str, prepared: &PreparedType, ct
     match content {
         PreparedContent::Enum(variants) => {
             let variants_ident = variants.iter().map(|v| &v.rs);
+            let variants_bytes = variants.iter().map(|v| format!("b\"{}\"", v.db));
             code!(w =>
                 #[derive($ser_str Debug, Clone, Copy, PartialEq, Eq)]
                 #[allow(non_camel_case_types)]
                 pub enum $struct_name {
                     $($variants_ident,)
+                }
+
+                impl cornucopia_async::rusqlite::types::FromSql for $struct_name {
+                    fn column_result(value: cornucopia_async::rusqlite::types::ValueRef<'_>) -> cornucopia_async::rusqlite::types::FromSqlResult<Self> {
+                        let cornucopia_async::rusqlite::types::ValueRef::Text(t) = value else {
+                            return Err(cornucopia_async::rusqlite::types::FromSqlError::InvalidType);
+                        };
+
+                        match t {
+                            $($variants_bytes => Ok(Self::$variants_ident),)
+                            _ => Err(cornucopia_async::rusqlite::types::FromSqlError::Other(
+                                if let Ok(s) = String::from_utf8(t.to_vec()) {
+                                    format!("{:?} is not a valid member of the enum $struct_name", s)
+                                } else {
+                                    format!("{:?} is not a a valid UTF-8 string; cannot construct enum $struct_name", t)
+                                }.into()))
+                        }
+                    }
+                }
+
+                impl cornucopia_async::rusqlite::types::ToSql for $struct_name {
+                    fn to_sql(&self) -> cornucopia_async::rusqlite::Result<cornucopia_async::rusqlite::types::ToSqlOutput<'_>> {
+                        Ok(match self {
+                            $(Self::$variants_ident => cornucopia_async::rusqlite::types::ToSqlOutput::Borrowed(
+                                cornucopia_async::rusqlite::types::ValueRef::Text($variants_bytes)
+                            ),)
+                        })
+                    }
                 }
             );
             enum_sql(w, name, struct_name, variants);
@@ -787,13 +924,20 @@ pub(crate) fn generate(preparation: Preparation, settings: CodegenSettings) -> S
                         let queries_string = module.queries.values().map(|query| {
                             |w: &mut String| gen_query_fn(w, module, query, &ctx)
                         });
+
+                        let dmls = module.queries.values().map(|query| {
+                            |w: &mut String| gen_sqlite_wrapper(w, module, query, &ctx)
+                        });
+
                         code!(w =>
                             $import
                             $($!rows_query_string)
                             $($!queries_string)
+                            $($!dmls)
                         )
                     }
                 };
+
 
                 if settings.gen_async != settings.gen_sync {
                     if settings.gen_async {

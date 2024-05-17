@@ -98,6 +98,7 @@ pub fn generate_managed<P: AsRef<Path>>(
 }
 
 fn write_generated_code(destination: &Path, generated_code: &str) -> Result<(), Error> {
+    let generated_code = prettyplease::unparse(&syn::parse_str(generated_code).unwrap());
     Ok(
         std::fs::write(destination, generated_code).map_err(|err| WriteOutputError {
             err,
