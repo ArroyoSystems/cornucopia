@@ -111,9 +111,9 @@ checksum = "96d30a06541fbafbc7f82ed10c06164cfbd2c401138f6addd8404629c4b16711"
 
 [[package]]
 name = "async-trait"
-version = "0.1.74"
+version = "0.1.83"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a66537f1bb974b254c98ed142ff995236e81b9d0fe4db0575f46612cb15eb0f9"
+checksum = "721cae7de5c34fbb2acd27e21e6d2cf7b886dce0c27388d46c4e6c47ea4318dd"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -126,7 +126,7 @@ version = "0.1.0"
 dependencies = [
  "cornucopia",
  "cornucopia_async",
- "deadpool-postgres",
+ "deadpool-postgres 0.12.1",
  "futures",
  "postgres-types",
  "tokio",
@@ -174,7 +174,7 @@ name = "basic-async"
 version = "0.1.0"
 dependencies = [
  "cornucopia_async",
- "deadpool-postgres",
+ "deadpool-postgres 0.12.1",
  "futures",
  "postgres-types",
  "tokio",
@@ -460,7 +460,7 @@ version = "0.6.0"
 dependencies = [
  "async-trait",
  "cornucopia_client_core",
- "deadpool-postgres",
+ "deadpool-postgres 0.14.0",
  "rusqlite",
  "tokio-postgres",
 ]
@@ -585,12 +585,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "deadpool"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6541a3916932fe57768d4be0b1ffb5ec7cbf74ca8c903fdfd5c0fe8aa958f0ed"
+dependencies = [
+ "deadpool-runtime",
+ "num_cpus",
+ "tokio",
+]
+
+[[package]]
 name = "deadpool-postgres"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bda39fa1cfff190d8924d447ad04fd22772c250438ca5ce1dfb3c80621c05aaa"
 dependencies = [
- "deadpool",
+ "deadpool 0.10.0",
+ "tokio",
+ "tokio-postgres",
+ "tracing",
+]
+
+[[package]]
+name = "deadpool-postgres"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ab8a4ea925ce79678034870834602a2980f4b88c09e97feb266496dbb4493d2"
+dependencies = [
+ "async-trait",
+ "deadpool 0.12.1",
+ "getrandom",
  "tokio",
  "tokio-postgres",
  "tracing",
@@ -835,8 +860,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be4136b2a15dd319360be1c07d9933517ccf0be8f16bf62a3bee4f0d618df427"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "wasi",
+ "wasm-bindgen",
 ]
 
 [[package]]
