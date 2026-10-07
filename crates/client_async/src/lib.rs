@@ -5,7 +5,7 @@ pub use crate::generic_client::GenericClient;
 pub use cornucopia_client_core::{ArrayIterator, ArraySql, BytesSql, IterSql, StringSql};
 
 pub use rusqlite;
-pub use sqlite::{Database, DatabaseSource, DbError};
+pub use sqlite::{Database, DatabaseSource, DbError, SqliteSource, Transaction};
 
 #[cfg(feature = "with-serde_json-1")]
 pub use cornucopia_client_core::JsonSql;

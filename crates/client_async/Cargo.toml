@@ -23,6 +23,7 @@ cornucopia_client_core = { path = "../client_core", version = "0.4.0" }
 
 # async
 async-trait = "0.1.63"
+tokio = { version = "1", features = ["sync"] }
 
 # rust-postgres interaction
 tokio-postgres = "0.7.7"
@@ -31,3 +32,9 @@ tokio-postgres = "0.7.7"
 deadpool-postgres = { version = "0.14", optional = true }
 
 rusqlite = "0.31.0"
+
+[dev-dependencies]
+futures = "0.3"
+postgres-types = "0.2"
+rusqlite = { version = "0.31.0", features = ["bundled", "hooks"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }

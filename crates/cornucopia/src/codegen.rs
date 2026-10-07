@@ -560,6 +560,7 @@ fn gen_sqlite_wrapper<W: Write>(
                     ${name}().bind(p, $($params_name,)).all().await?.into_iter().collect()
                 }
                 cornucopia_async::Database::Sqlite(c) => {
+                    let c = c.connection().await?;
                     c.query_rows(
                         "$sqlite_sql",
                         cornucopia_async::rusqlite::params![$($params_name,)],
@@ -579,6 +580,7 @@ fn gen_sqlite_wrapper<W: Write>(
                         ${name}().bind(p, $($params_name,)).await? as u64
                     }
                     cornucopia_async::Database::Sqlite(c) => {
+                        let c = c.connection().await?;
                         c.execute("$sqlite_sql",
                           cornucopia_async::rusqlite::params![$($params_name,)])? as u64
                     }

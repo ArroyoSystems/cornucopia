@@ -461,7 +461,10 @@ dependencies = [
  "async-trait",
  "cornucopia_client_core",
  "deadpool-postgres 0.14.0",
+ "futures",
+ "postgres-types",
  "rusqlite",
+ "tokio",
  "tokio-postgres",
 ]
 
