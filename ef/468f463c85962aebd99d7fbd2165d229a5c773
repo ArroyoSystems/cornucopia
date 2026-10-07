@@ -1,0 +1,21 @@
+crates/client_async/tests/transactions.rs
+  s_cf21f4769e7bbb::t_b29a53e15f05df 1-339
+crates/client_async/src/sqlite.rs
+  s_cf21f4769e7bbb::t_80cb8a14dffca5 6-7,9,12-13,46-47,66,70,80-108,110-117,121,123-132,135-161,168-227,238-300
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "ef468f463c85962aebd99d7fbd2165d229a5c773",
+  "prompts": {},
+  "sessions": {
+    "s_cf21f4769e7bbb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f34d636a-26b2-4a16-ba42-bb8e5f1c3108",
+        "model": "unknown"
+      },
+      "human_author": "Micah Wylde <mwylde@cloudflare.com>"
+    }
+  }
+}
